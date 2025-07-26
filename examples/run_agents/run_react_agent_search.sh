@@ -20,14 +20,6 @@ rm -rf /tmp/ray/ray_current_cluster
 # Start Ray head node
 ray start --head --node-ip-address="$head_node_ip" --port=$port  --num-cpus 192 --num-gpus 8
 
-# Debug
-# model=Qwen/Qwen2.5-3B-Instruct
-# lr=5e-7
-# length=512
-# batch_size=64
-# num_chains=32
-# kl_coef=0.01
-# train_dataset="gsm8k"
 
 model=Qwen/Qwen2.5-7B-Instruct
 lr=5e-7
@@ -36,11 +28,11 @@ val_batch_size=512
 train_batch_size=128
 num_chains=1
 kl_coef=0.001
-train_dataset="./data/rlhf/qa/train_random_8000.json"
-eval_dataset="./data/rlhf/qa/dev_random_500.json"
-tools="[google_search,answer]"
-# tools="[asyncdense_retrieve,answer]"
-# tools="[dense_retrieve,answer]"
+train_dataset="./data/rlhf/qa/hotpotqa_train_random_8000.json"
+eval_dataset="./data/rlhf/qa/hotpotqa_dev_random_500.json"
+# tools="[google_search,answer_qa]"
+tools="[asyncdense_retrieve,answer_qa]"
+# tools="[dense_retrieve,answer_qa]"
 # reward_name="qa_f1_reward"
 reward_name="qa_f1_reward_format"
 # adv_estimator=rloo
@@ -53,7 +45,7 @@ entropy_coeff=0.001
 kl_loss_type=mse
 agent_type=react
 max_steps=4
-prompt_template="qwen-chat"
+prompt_template="qwen2.5-no-system-tool"
 total_training_steps=100
 project_name="AgentRL"
 

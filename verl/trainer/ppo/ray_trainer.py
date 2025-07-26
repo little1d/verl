@@ -34,6 +34,7 @@ from pprint import pprint
 from typing import Dict, Optional, Type
 import ray
 from agents.agents.auto import AutoAgent
+from agents.envs import clear_enroot_containers
 import numpy as np
 import ray
 import torch
@@ -287,13 +288,17 @@ class RayPPOTrainer:
         self.tokenizer = tokenizer
         self.processor = processor
         self.config = config
+
+        # Agent rollout related initialization
+        # Before starting the training, clear all enroot containers
+        clear_enroot_containers()
         print(f"Config.Agent: {config.agent}")
         self.agent_wrapper = AutoAgent.from_config(config.agent)
         # set jinja template for vllm rollout
         self.config.actor_rollout_ref.rollout.chat_template = self.agent_wrapper.jinja_template
+        
         self.reward_fn = reward_fn
         self.val_reward_fn = val_reward_fn
-
         self.hybrid_engine = config.actor_rollout_ref.hybrid_engine
         assert self.hybrid_engine, "Currently, only support hybrid engine"
 

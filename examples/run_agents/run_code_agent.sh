@@ -28,11 +28,11 @@ ray start --head --node-ip-address="$head_node_ip" --port=$port  --num-cpus 192 
 # kl_coef=0.01
 # train_dataset="gsm8k"
 
-model=Qwen/Qwen2.5-7B-Instruct
-template=qwen2.5
+model=Qwen/Qwen2.5-3B-Instruct
+template=qwen2.5-no-system-tool
 lr=5e-7
 length=512
-batch_size=128
+batch_size=64
 num_chains=8
 kl_coef=0.001
 train_dataset="orz_math_57k_train"
@@ -50,12 +50,11 @@ reward_name="math_reward_tool"
 # reward_name="llm_as_judge_math_reward"
 entropy_coeff=0.001
 kl_loss_type=mse
-max_steps=4
+max_steps=8
 agent_backend="async_verl"
 project_name="AgentRL"
 total_training_steps=200
-experiment_name="test_tool_1"
-# experiment_name="${model}-${train_dataset}-${lr}-${length}-bs${batch_size}-n${num_chains}-kl${kl_loss_type}${kl_coef}-entropy${entropy_coeff}-${max_steps}steps-${adv_estimator}"
+experiment_name="${model}-${agent_type}-${train_dataset}-${lr}-${length}-bs${batch_size}-n${num_chains}-kl${kl_loss_type}${kl_coef}-entropy${entropy_coeff}-${max_steps}steps-${adv_estimator}"
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=$adv_estimator \

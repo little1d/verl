@@ -19,24 +19,17 @@ rm -rf /tmp/ray/ray_current_cluster
 # Start Ray head node
 ray start --head --node-ip-address="$head_node_ip" --port=$port  --num-cpus 192 --num-gpus 8
 
-# Debug
-# model=Qwen/Qwen2.5-3B-Instruct
-# lr=5e-7
-# length=512
-# batch_size=64
-# num_chains=32
-# kl_coef=0.01
-# train_dataset="gsm8k"
 
 model=Qwen/Qwen2.5-3B-Instruct
-lr=5e-7
+template="qwen2.5-no-system-tool"
+lr=1e-7
 length=512
 val_batch_size=512
 train_batch_size=128
 num_chains=4
 kl_coef=0.001
-train_dataset="./data/rlhf/webshop/goals_train.json"
-eval_dataset="./data/rlhf/webshop/goals_val.json"
+train_dataset="./data/rlhf/webshop/webshop_goals_train.json"
+eval_dataset="./data/rlhf/webshop/webshop_goals_val.json"
 # make sure the task_info is set in the ppo_trainer.yaml
 task_info= "You are a shopping assistant. You are given a task to buy a product. Use the webshop_browser tool to navigate through the shopping app. You must reach the checkout page by cliking on the 'Buy Now' button in the product page and reach the checkout page that says 'Thank you for shopping with us!'" # For react agent, you can specify the task info here
 tools="[webshop_browser]"
@@ -44,8 +37,9 @@ reward_name="webshop_reward"
 # adv_estimator=remax
 adv_estimator=grpo
 # adv_estimator=gae
+# adv_estimator=reinforce_plus_plus
 
-entropy_coeff=0.001
+entropy_coeff=0.0001
 kl_loss_type=mse
 agent_type=react
 max_steps=8

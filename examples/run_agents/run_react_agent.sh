@@ -49,7 +49,7 @@ entropy_coeff=0.001
 kl_loss_type=mse
 agent_type=react
 max_steps=4
-prompt_template="qwen-7b-chat"
+prompt_template="qwen2.5-no-system-tool"
 total_training_steps=200
 project_name="AgentRL"
 

@@ -45,7 +45,7 @@ entropy_coeff=0.01  # Higher entropy for exploration
 kl_loss_type=mse
 agent_type=react
 max_steps=10  
-prompt_template="qwen-chat"
+prompt_template="qwen2.5-no-system-tool"
 total_training_steps=150 
 project_name="AgentFly-AlfWorld-RPP-1024"
 

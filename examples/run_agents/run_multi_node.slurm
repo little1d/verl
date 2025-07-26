@@ -61,7 +61,7 @@ sleep 10
 
 
 model=Qwen/Qwen2.5-3B-Instruct
-template=qwen-chat
+template=qwen2.5-no-system-tool
 lr=5e-7
 length=512
 batch_size=128

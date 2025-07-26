@@ -19,17 +19,9 @@ rm -rf /tmp/ray/ray_current_cluster
 # Start Ray head node
 ray start --head --node-ip-address="$head_node_ip" --port=$port  --num-cpus 192 --num-gpus 8
 
-# Debug
-# model=Qwen/Qwen2.5-3B-Instruct
-# lr=5e-7
-# length=512
-# batch_size=64
-# num_chains=32
-# kl_coef=0.01
-# train_dataset="gsm8k"
 
 model=Qwen/Qwen2.5-3B-Instruct
-template="qwen2.5"
+template="qwen2.5-no-system-tool"
 lr=5e-7
 length=512
 batch_size=64
@@ -45,9 +37,9 @@ adv_estimator=grpo
 mini_batch_size=$batch_size
 
 agent_type=react
-tools="[code_interpreter,answer]"
-reward_name="math_reward_tool"
-# reward_name="math_reward_thought_with_tool"
+tools="[code_interpreter,answer_math]"
+# reward_name="math_reward_tool"
+reward_name="math_reward_thought_with_tool"
 # reward_name="llm_as_judge_math_reward"
 entropy_coeff=0.001
 kl_loss_type=mse
