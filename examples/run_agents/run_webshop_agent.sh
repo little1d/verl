@@ -22,7 +22,7 @@ ray start --head --node-ip-address="$head_node_ip" --port=$port  --num-cpus 192 
 
 model=Qwen/Qwen2.5-3B-Instruct
 template="qwen2.5-no-system-tool"
-lr=1e-7
+lr=4e-7
 length=512
 val_batch_size=512
 train_batch_size=128
