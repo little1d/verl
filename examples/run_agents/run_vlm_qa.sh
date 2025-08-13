@@ -48,7 +48,7 @@ entropy_coeff=0.001
 kl_loss_type=mse
 agent_type=react
 max_steps=1
-prompt_template="qwen2.5-vl"
+template="qwen2.5-vl"
 total_training_steps=200
 project_name="AgentRL"
 trust_remote_code=True
@@ -62,6 +62,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_batch_size=$train_batch_size \
     agent.use_agent=True \
     agent.model_name_or_path=$model \
+    agent.template=$template \
     agent.max_steps=${max_steps} \
     agent.agent_type=$agent_type \
     agent.tools=${tools} \
