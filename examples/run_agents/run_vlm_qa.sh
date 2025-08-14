@@ -28,16 +28,24 @@ val_batch_size=512
 train_batch_size=128
 num_chains=1
 kl_coef=0.001
-train_dataset="./data/rlhf/qa/OK-VQA.json"
-eval_dataset="./data/rlhf/qa/OK-VQA.json"
 
-tools="[answer_qa]"
+train_dataset="./data/rlhf/qa/infoseek_train.json"
+eval_dataset="./data/rlhf/qa/infoseek_val.json"
+reward_name="infoseek_reward"
+tools="[asyncdense_retrieve,answer_qa]"
+max_steps=6
+
+# OK-VQA
+# train_dataset="./data/rlhf/qa/OK-VQA.json"
+# eval_dataset="./data/rlhf/qa/OK-VQA.json"
+# reward_name="ok_vqa_reward"
+# tools="[answer_qa]"
+# max_steps=1
+
 # tools="[google_search,answer_qa]"
-# tools="[asyncdense_retrieve,answer_qa]"
 # tools="[dense_retrieve,answer_qa]"
 # reward_name="qa_f1_reward"
 # reward_name="qa_f1_reward_format"
-reward_name="ok_vqa_reward"
 # adv_estimator=rloo
 adv_estimator=reinforce_plus_plus
 # adv_estimator=remax
@@ -47,7 +55,6 @@ adv_estimator=reinforce_plus_plus
 entropy_coeff=0.001
 kl_loss_type=mse
 agent_type=react
-max_steps=1
 template="qwen2.5-vl"
 total_training_steps=200
 project_name="AgentRL"
