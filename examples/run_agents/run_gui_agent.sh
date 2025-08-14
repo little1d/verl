@@ -27,7 +27,6 @@ ray start --head --node-ip-address="$head_node_ip" --port=$port  --num-cpus 192 
 
 
 # Model configuration for GUI agent
-<<<<<<< HEAD
 model=ByteDance-Seed/UI-TARS-1.5-7B
 # model=Qwen/Qwen2.5-VL-3B-Instruct
 lr=5e-7
@@ -40,20 +39,6 @@ kl_coef=0.001
 # GUI-specific dataset paths (update these to your actual dataset paths)
 train_dataset="data/rlhf/gui/gui_r1_train.parquet"
 eval_dataset="data/rlhf/gui/gui_r1_test.parquet"
-=======
-# model=ByteDance-Seed/UI-TARS-1.5-7B
-model=Qwen/Qwen2.5-VL-3B-Instruct
-lr=5e-7
-length=256
-val_batch_size=8
-train_batch_size=8
-num_chains=1
-kl_coef=0.001
-
-# GUI-specific dataset paths (update these to your actual dataset paths)
-train_dataset="GUI-R1/train_100_samples.parquet"
-eval_dataset="GUI-R1/test_100_samples.parquet"
->>>>>>> 6b302a6f97c418ab0eb6c749ae1d435beb4e86aa
 
 # GUI-specific tools
 tools="[pyautogui_code_generator]"
