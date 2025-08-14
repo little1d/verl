@@ -23,9 +23,9 @@ import os
 import re
 from collections import defaultdict
 from typing import List, Optional, Union
-
 import datasets
 from huggingface_hub import hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError
 import shutil
 import numpy as np
 import torch
@@ -67,16 +67,45 @@ def convert_parquet_to_json(parquet_file: str, json_file: str):
         json.dump(records, f, ensure_ascii=False, indent=2)
 
 
-def pil_to_data_uri(img: Union[Image.Image, str], fmt="PNG") -> str:
+def pil_to_data_uri(img: Union[Image.Image, str, dict], fmt=None) -> str:
+    if isinstance(img, dict):
+        if "bytes" in img:
+            img = img["bytes"]
+
     if isinstance(img, Image.Image):
+        # Try to detect format from PIL Image first
+        detected_fmt = img.format or fmt or "PNG"
         buf = io.BytesIO()
-        img.save(buf, format=fmt)
+        img.save(buf, format=detected_fmt)
         b64 = base64.b64encode(buf.getvalue()).decode()
-        return f"data:image/{fmt.lower()};base64,{b64}"
+        return f"data:image/{detected_fmt.lower()};base64,{b64}"
     elif isinstance(img, str):
         return img
+    elif isinstance(img, bytes):
+        # Try to detect format from magic bytes
+        detected_fmt = fmt or detect_image_format_from_bytes(img)
+        return f"data:image/{detected_fmt.lower()};base64,{base64.b64encode(img).decode('utf-8')}"
     else:
         raise ValueError(f"Invalid image type: {type(img)}")
+
+def detect_image_format_from_bytes(img_bytes: bytes) -> str:
+    """Detect image format from bytes using magic numbers"""
+    if len(img_bytes) < 4:
+        return "PNG"  # Default fallback
+    
+    # Check magic bytes for common formats
+    if img_bytes.startswith(b'\xff\xd8\xff'):
+        return "JPEG"
+    elif img_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+        return "PNG"
+    elif img_bytes.startswith(b'GIF87a') or img_bytes.startswith(b'GIF89a'):
+        return "GIF"
+    elif img_bytes.startswith(b'RIFF') and img_bytes[8:12] == b'WEBP':
+        return "WEBP"
+    elif img_bytes.startswith(b'BM'):
+        return "BMP"
+    else:
+        return "PNG"  # Default fallback
 
 
 class RLHFDataset(Dataset):
@@ -319,11 +348,14 @@ class RLHFAgentDataset(Dataset):
             if not os.path.exists(data_file):
                 # Try to find the data file in HF repo
                 filename = os.path.basename(data_file)
-                cached_path = hf_hub_download(
-                    repo_id="Agent-One/AgentFly-Train",
-                    filename=filename,
-                    repo_type="dataset",
-                )
+                try:
+                    cached_path = hf_hub_download(
+                        repo_id="Agent-One/AgentFly-Train",
+                        filename=filename,
+                        repo_type="dataset",
+                    )
+                except EntryNotFoundError:
+                    raise ValueError(f"Data file {data_file} not found in local directory nor in HF repo Agent-One/AgentFly-Train.")
                 folder = os.path.dirname(data_file)
                 os.makedirs(folder, exist_ok=True)
                 shutil.copy(cached_path, data_file)
@@ -370,7 +402,7 @@ class RLHFAgentDataset(Dataset):
         return len(self.data)
     
     def _build_messages(self, row_dict):
-        question_keys = ['question', 'problem']
+        question_keys = ['question', 'problem', 'instruction']
         for key in question_keys:
             question = None
             if key in row_dict:
