@@ -1,58 +1,50 @@
+#!/usr/bin/env bash
+
 export VLLM_USE_V1=1
-# Run in single node
 
 set -x
 
-export head_node=${nodes[0]}
+swanlab login --host http://100.101.31.125:8001 --relogin -k PGXG66CPWHASFqnS6irMr
 
+# ------------- paths (edit accordingly) -------------
+model=/mnt/shared-storage-user/yangzhuo/main/model/Qwen2.5-7B-Instruct
+template=qwen2.5-no-system-tool
+data_dir=/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/data/mol_edit
+train_dataset=${data_dir}/train_mol_edit_train.json
+val_dataset=${data_dir}/train_mol_edit_val.json
+
+# ------------- agent / training hyperparams -------------
+agent_type=react
+agent_backend=async_verl
+reward_name=mol_edit_simple
+# Provide tools the agent can optionally call
+tools="['chem_mol_validate','chem_calc_properties','chem_edit_smiles']"
+max_turns=8
+batch_size=32
+num_chains=4
+lr=5e-7
+kl_coef=0.001
+kl_loss_type=mse
+entropy_coeff=0.001
+response_length=1024
+total_training_steps=600
+adv_estimator=grpo
+mini_batch_size=$batch_size
+project_name="AgentRL"
+experiment_name="mol_edit_qwen2.5-7b"
+
+# ------------- Ray (adjust to your machine) -------------
+ray stop
+rm -rf /tmp/ray /home/yangzhuo/tmp/ray
 head_node_ip=$(hostname --ip-address)
 port=6379
-address_head=$head_node_ip:$port
+ray start --head --node-ip-address="$head_node_ip" --port=$port --num-cpus 16 --num-gpus 4 --include-dashboard=false
 
-# export VLLM_ATTENTION_BACKEND=XFORMERS
-# export GLOO_SOCKET_IFNAME=ens10f0np0
-export HYDRA_FULL_ERROR=1
-# Remove existing Ray cluster
-ray stop
-rm -rf /tmp/ray/ray_current_cluster
-
-# Start Ray head node
-ray start --head --node-ip-address="$head_node_ip" --port=$port  --num-cpus 192 --num-gpus 8
-
-
-model=Qwen/Qwen2.5-3B-Instruct
-template="qwen2.5-no-system-tool"
-lr=5e-7
-length=512
-batch_size=64
-num_chains=8
-kl_coef=0.001
-train_dataset="orz_math_57k_train"
-# adv_estimator=rloo
-# adv_estimator=reinforce_plus_plus
-# adv_estimator=remax
-adv_estimator=grpo
-# adv_estimator=gae
-
-mini_batch_size=$batch_size
-
-agent_type=react
-tools="[code_interpreter,answer_math]"
-# reward_name="math_reward_tool"
-reward_name="math_reward_thought_with_tool"
-# reward_name="llm_as_judge_math_reward"
-entropy_coeff=0.001
-kl_loss_type=mse
-max_turns=8
-agent_backend="async_verl"
-project_name="AgentRL"
-total_training_steps=200
-
-
+# ------------- Launch training -------------
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=$adv_estimator \
-    data.train_files=./data/rlhf/math/${train_dataset}.json \
-    data.val_files=./data/rlhf/math/MATH_500.json \
+    data.train_files=${train_dataset} \
+    data.val_files=${val_dataset} \
     data.train_batch_size=$batch_size \
     agent.agent_type=$agent_type \
     agent.tools=$tools \
@@ -78,7 +70,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.response_length=$length \
+    actor_rollout_ref.rollout.response_length=$response_length \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.5 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
@@ -87,12 +79,14 @@ python3 -m verl.trainer.main_ppo \
     critic.ppo_micro_batch_size_per_gpu=2 \
     algorithm.kl_ctrl.kl_coef=$kl_coef \
     trainer.critic_warmup=0 \
-    trainer.logger=['console','wandb'] \
+    trainer.logger="['console','swanlab']" \
     trainer.project_name=$project_name \
-    trainer.experiment_name="${model}-${train_dataset}-${lr}-${length}-bs${batch_size}-n${num_chains}-kl${kl_loss_type}${kl_coef}-entropy${entropy_coeff}-${max_turns}turns-${adv_estimator}" \
-    trainer.n_gpus_per_node=8 \
+    trainer.experiment_name=${experiment_name} \
+    trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=50 \
     trainer.test_freq=10 \
     trainer.total_training_steps=$total_training_steps \
     trainer.val_before_train=False
+
+# test set is not used during training; see ChemCoTBench eval script for scoring
