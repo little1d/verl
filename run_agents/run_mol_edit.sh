@@ -18,7 +18,7 @@ agent_type=react
 agent_backend=async_verl
 reward_name=mol_edit_simple
 # Provide tools the agent can optionally call
-tools="['chem_mol_validate','chem_calc_properties','chem_edit_smiles']"
+tools="['chem_mol_validate','chem_calc_properties','chem_add_group','chem_remove_group','chem_replace_group']"
 max_turns=8
 batch_size=32
 num_chains=4
@@ -31,7 +31,7 @@ total_training_steps=600
 adv_estimator=grpo
 mini_batch_size=$batch_size
 project_name="AgentRL"
-experiment_name="mol_edit_qwen2.5-7b"
+experiment_name="mol_edit_qwen2.5-3b"
 
 # ------------- Ray (adjust to your machine) -------------
 ray stop
