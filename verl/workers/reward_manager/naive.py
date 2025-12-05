@@ -69,14 +69,57 @@ class NaiveRewardManager:
 
             data_source = data_item.non_tensor_batch[self.reward_fn_key]
 
+            def _scalar(val):
+                try:
+                    import numpy as np
+                    if isinstance(val, np.ndarray):
+                        if val.shape == ():
+                            return val.item()
+                        if len(val) > 0:
+                            return val[0]
+                    if isinstance(val, (list, tuple)) and len(val) > 0:
+                        return val[0]
+                except Exception:
+                    pass
+                return val
+
             extra_info = data_item.non_tensor_batch.get("extra_info", None)
 
-            score = self.compute_score(
-                data_source=data_source,
-                solution_str=response_str,
-                ground_truth=ground_truth,
-                extra_info=extra_info,
-            )
+            # --- AgentFly Support: Pass all metadata ---
+            kwargs = {}
+            if isinstance(extra_info, dict):
+                kwargs.update(extra_info)
+            # 保留原始 extra_info，便于下游兜底解析
+            if extra_info is not None:
+                kwargs.setdefault("extra_info", extra_info)
+            # Pick top-level fields if present (scalar per sample)
+            for key in ["task", "subtask", "src_smiles", "add_group", "remove_group", "ref_smiles", "reward_model"]:
+                if key in data_item.non_tensor_batch and key not in kwargs:
+                    kwargs[key] = _scalar(data_item.non_tensor_batch[key])
+            
+            # Construct pseudo-trajectory
+            trajectory = [
+                {"role": "user", "content": prompt_str},
+                {"role": "assistant", "content": response_str}
+            ]
+
+            try:
+                # Try calling with AgentFly signature
+                score = self.compute_score(
+                    prediction=response_str,
+                    trajectory=trajectory,
+                    ground_truth=ground_truth,
+                    ref_smiles=kwargs.get("ref_smiles", ground_truth),
+                    **kwargs
+                )
+            except TypeError:
+                # Fallback to original verl signature
+                score = self.compute_score(
+                    data_source=data_source,
+                    solution_str=response_str,
+                    ground_truth=ground_truth,
+                    extra_info=extra_info,
+                )
 
             if isinstance(score, dict):
                 reward = score["score"]
