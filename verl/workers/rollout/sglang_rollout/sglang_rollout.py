@@ -325,6 +325,13 @@ class SGLangRollout(BaseRollout):
                 attention_mask = attention_mask.repeat_interleave(self.sampling_params["n"], dim=0)
                 position_ids = position_ids.repeat_interleave(self.sampling_params["n"], dim=0)
                 batch_size = batch_size * self.sampling_params["n"]
+                # Repeat all non_tensor_batch fields to match the expanded batch size
+                # This is critical for fields like task, src_smiles, add_group, etc. used in reward computation
+                for key in list(non_tensor_batch.keys()):
+                    if key not in ["multi_modal_inputs", "tools_kwargs"]:
+                        # Skip fields that are already handled or are not arrays
+                        if isinstance(non_tensor_batch[key], np.ndarray):
+                            non_tensor_batch[key] = np.repeat(non_tensor_batch[key], self.sampling_params["n"], axis=0)
                 if "multi_modal_inputs" in non_tensor_batch.keys():
                     non_tensor_batch["multi_modal_inputs"] = np.repeat(non_tensor_batch["multi_modal_inputs"], self.sampling_params["n"], axis=0)
                 if "tools_kwargs" in non_tensor_batch.keys():

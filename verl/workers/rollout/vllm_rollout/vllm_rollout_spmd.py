@@ -279,6 +279,13 @@ class vLLMRollout(BaseRollout):
                 attention_mask = _repeat_interleave(attention_mask, self.sampling_params.n)
                 position_ids = _repeat_interleave(position_ids, self.sampling_params.n)
                 batch_size = batch_size * self.sampling_params.n
+                # Repeat all non_tensor_batch fields to match the expanded batch size
+                # This is critical for fields like task, src_smiles, add_group, etc. used in reward computation
+                for key in list(non_tensor_batch.keys()):
+                    if key not in ["multi_modal_inputs", "tools_kwargs"]:
+                        # Skip fields that are already handled or are not arrays
+                        if isinstance(non_tensor_batch[key], np.ndarray):
+                            non_tensor_batch[key] = _repeat_interleave(non_tensor_batch[key], self.sampling_params.n)
                 if "multi_modal_inputs" in non_tensor_batch.keys():
                     non_tensor_batch["multi_modal_inputs"] = _repeat_interleave(non_tensor_batch["multi_modal_inputs"], self.sampling_params.n)
                 # NOTE(linjunrong): for multi-turn https://github.com/volcengine/verl/pull/1037
