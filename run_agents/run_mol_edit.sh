@@ -33,6 +33,15 @@ mini_batch_size=$batch_size
 project_name="AgentRL"
 experiment_name="mol_edit_qwen2.5-3b"
 
+# ------------- log paths (to avoid conflicts when running multiple experiments) -------------
+# Extract model name from model path for log file naming
+model_name=$(basename $model)
+log_dir="/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/logs"
+reward_debug_log="${log_dir}/reward_debug_${model_name}.log"
+mol_edit_traj_log="${log_dir}/mol_edit_traj_${model_name}.jsonl"
+export REWARD_DEBUG_FILE=$reward_debug_log
+export MOL_EDIT_TRAJ_FILE=$mol_edit_traj_log
+
 # ------------- Ray (adjust to your machine) -------------
 ray stop
 rm -rf /tmp/ray /home/yangzhuo/tmp/ray
