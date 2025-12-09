@@ -7,7 +7,8 @@ set -x
 swanlab login --host http://100.101.31.125:8001 --relogin -k PGXG66CPWHASFqnS6irMr
 
 # ------------- paths (edit accordingly) -------------
-model=/mnt/shared-storage-user/yangzhuo/main/model/Qwen2.5-7B-Instruct
+# model=/mnt/shared-storage-user/yangzhuo/main/model/Qwen2.5-7B-Instruct
+model=/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/checkpoints/AgentRL/moledit-7b
 template=qwen2.5-no-system-tool
 data_dir=/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/data/mol_opt
 train_dataset=${data_dir}/train_mol_opt_train.json
@@ -17,17 +18,21 @@ val_dataset=${data_dir}/train_mol_opt_val.json
 agent_type=react
 agent_backend=async_verl
 reward_name=mol_opt_reward
-# Provide tools the agent can optionally call (prop + scaffold + oracle)
-tools="['chem_mol_validate','chem_calc_properties','chem_calc_logp','chem_calc_solubility','chem_calc_qed','chem_murcko_scaffold','chem_scaffold_similarity','chem_tanimoto_similarity','chem_oracle_score']"
-max_turns=4
+# Provide tools the agent can optionally call
+# - 基础/属性: validate, calc_properties, logp/solubility/qed
+# - 编辑: add/remove/replace_group（优化时也需局部编辑能力）
+# - 架构/相似度: murcko_scaffold, scaffold_similarity, tanimoto_similarity
+# - Oracle: chem_oracle_score
+tools="['chem_mol_validate','chem_calc_properties','chem_calc_logp','chem_calc_solubility','chem_calc_qed','chem_add_group','chem_remove_group','chem_replace_group','chem_murcko_scaffold','chem_scaffold_similarity','chem_tanimoto_similarity','chem_oracle_score']"
+max_turns=8
 batch_size=32
 num_chains=4
 lr=5e-7
 kl_coef=0.001
 kl_loss_type=mse
 entropy_coeff=0.001
-response_length=512
-total_training_steps=400
+response_length=1024
+total_training_steps=600
 adv_estimator=grpo
 mini_batch_size=$batch_size
 project_name="AgentRL"
@@ -38,9 +43,14 @@ experiment_name="mol_opt_qwen2.5-7b"
 model_name=$(basename $model)
 log_dir="/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/logs"
 reward_debug_log="${log_dir}/reward_debug_${model_name}.log"
-mol_edit_traj_log="${log_dir}/mol_edit_traj_${model_name}.jsonl"
+mol_opt_traj_log="${log_dir}/mol_opt_traj_${model_name}.jsonl"
 export REWARD_DEBUG_FILE=$reward_debug_log
-export MOL_EDIT_TRAJ_FILE=$mol_edit_traj_log
+export MOL_OPT_TRAJ_FILE=$mol_opt_traj_log
+
+# ------------- TDC Oracle cache path -------------
+# 确保 Ray/worker 也能读到本地 oracle，按节点统一设置
+export TDC_CACHE_PATH="/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/oracle"
+export PYTDC_CACHE="$TDC_CACHE_PATH"
 
 # ------------- Ray (adjust to your machine) -------------
 ray stop
