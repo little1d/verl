@@ -37,7 +37,6 @@ experiment_name="mol_edit_qwen2.5-3b"
 # Extract model name from model path for log file naming
 model_name=$(basename $model)
 log_dir="/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/logs"
-<<<<<<< HEAD
 reward_debug_log="${log_dir}/reward_debug_${experiment_name}.log"
 mol_edit_traj_log="${log_dir}/mol_edit_traj_${experiment_name}.jsonl"
 
@@ -49,14 +48,6 @@ export MOL_EDIT_TRAJ_FILE=$mol_edit_traj_log
 echo "Log directory: $log_dir"
 echo "Reward debug log: $reward_debug_log"
 echo "Mol edit trajectory log: $mol_edit_traj_log"
-
-=======
-reward_debug_log="${log_dir}/reward_debug_${model_name}.log"
-mol_edit_traj_log="${log_dir}/mol_edit_traj_${model_name}.jsonl"
-export REWARD_DEBUG_FILE=$reward_debug_log
-export MOL_EDIT_TRAJ_FILE=$mol_edit_traj_log
-
->>>>>>> c2d8518ea8018d0f2420f1de21f131d2118bd696
 # ------------- Ray (adjust to your machine) -------------
 ray stop
 rm -rf /tmp/ray /home/yangzhuo/tmp/ray

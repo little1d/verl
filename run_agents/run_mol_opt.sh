@@ -2,22 +2,15 @@
 
 export VLLM_USE_V1=1
 
-<<<<<<< HEAD
 # Increase file descriptor limit to avoid "Too many open files" error
 # This is needed for PyTorch DataLoader workers and Ray workers
 ulimit -n 65536
 
-=======
->>>>>>> c2d8518ea8018d0f2420f1de21f131d2118bd696
 set -x
 
 swanlab login --host http://100.101.31.125:8001 --relogin -k PGXG66CPWHASFqnS6irMr
 
-<<<<<<< HEAD
 # ------------- paths (opt accordingly) -------------
-=======
-# ------------- paths (edit accordingly) -------------
->>>>>>> c2d8518ea8018d0f2420f1de21f131d2118bd696
 # model=/mnt/shared-storage-user/yangzhuo/main/model/Qwen2.5-7B-Instruct
 model=/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/checkpoints/AgentRL/moledit-7b
 template=qwen2.5-no-system-tool
@@ -35,13 +28,8 @@ reward_name=mol_opt_reward
 # - 架构/相似度: murcko_scaffold, scaffold_similarity, tanimoto_similarity
 # - Oracle: chem_oracle_score
 tools="['chem_mol_validate','chem_calc_properties','chem_calc_logp','chem_calc_solubility','chem_calc_qed','chem_add_group','chem_remove_group','chem_replace_group','chem_murcko_scaffold','chem_scaffold_similarity','chem_tanimoto_similarity','chem_oracle_score']"
-<<<<<<< HEAD
 max_turns=4
 batch_size=16
-=======
-max_turns=8
-batch_size=32
->>>>>>> c2d8518ea8018d0f2420f1de21f131d2118bd696
 num_chains=4
 lr=5e-7
 kl_coef=0.001
@@ -58,7 +46,6 @@ experiment_name="mol_opt_qwen2.5-7b"
 # Extract model name from model path for log file naming
 model_name=$(basename $model)
 log_dir="/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/logs"
-<<<<<<< HEAD
 reward_debug_log="${log_dir}/reward_debug_${experiment_name}.log"
 mol_opt_traj_log="${log_dir}/mol_opt_traj_${experiment_name}.jsonl"
 
@@ -74,14 +61,6 @@ export DISABLE_TRAJ_LOG=1
 echo "Log directory: $log_dir"
 echo "Reward debug log: $reward_debug_log"
 echo "Mol opt trajectory log: $mol_opt_traj_log"
-
-=======
-reward_debug_log="${log_dir}/reward_debug_${model_name}.log"
-mol_opt_traj_log="${log_dir}/mol_opt_traj_${model_name}.jsonl"
-export REWARD_DEBUG_FILE=$reward_debug_log
-export MOL_OPT_TRAJ_FILE=$mol_opt_traj_log
-
->>>>>>> c2d8518ea8018d0f2420f1de21f131d2118bd696
 # ------------- TDC Oracle cache path -------------
 # 确保 Ray/worker 也能读到本地 oracle，按节点统一设置
 export TDC_CACHE_PATH="/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/oracle"
