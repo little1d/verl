@@ -18,6 +18,7 @@ import json
 import sys
 import logging
 import os
+import fcntl
 
 import torch
 
@@ -28,6 +29,22 @@ logger = logging.getLogger(__name__)
 
 # Debug file for reward manager
 DEBUG_FILE = os.environ.get("REWARD_DEBUG_FILE", "/mnt/shared-storage-user/yangzhuo/main/projects/agentrl/AgentFly/verl/logs/reward_debug.log")
+
+def _write_debug_file(content: str):
+    """Helper function to write to debug file with file locking."""
+     # Check if debug logging is disabled
+    if os.environ.get("DISABLE_DEBUG_LOG", "0") == "1":
+        return
+    try:
+        with open(DEBUG_FILE, "a") as f:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                f.write(content)
+                f.flush()
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except Exception:
+        pass  # Silently ignore debug file write errors
 
 # ReAct parsing utilities (copied from agentfly to avoid dependency issues)
 def parse_react_step(text: str):
@@ -145,12 +162,7 @@ class NaiveRewardManager:
         """We will expand this function gradually based on the available datasets"""
 
         # Debug: Print entry point (only log to file, not to console to reduce noise)
-        try:
-            with open(DEBUG_FILE, "a") as f:
-                f.write(f"[RewardManager Debug] __call__ entered: return_dict={return_dict}, data_len={len(data)}\n")
-                f.flush()
-        except Exception:
-            pass
+        _write_debug_file(f"[RewardManager Debug] __call__ entered: return_dict={return_dict}, data_len={len(data)}\n")
 
         # If there is rm score, we directly return rm score. Otherwise, we compute via rm_score_fn
         # NOTE: For mol_edit tasks, we need to recompute even if rm_scores exists,
@@ -203,9 +215,7 @@ class NaiveRewardManager:
             sys.stdout.flush()
             sys.stderr.flush()
             try:
-                with open(DEBUG_FILE, "a") as f:
-                    f.write(debug_no_responses + "\n")
-                    f.flush()
+                _write_debug_file(debug_no_responses + "\n")
             except Exception as e:
                 logger.error(f"Failed to write debug file: {e}")
             
@@ -220,40 +230,95 @@ class NaiveRewardManager:
                 sys.stdout.flush()
                 sys.stderr.flush()
                 try:
-                    with open(DEBUG_FILE, "a") as f:
-                        f.write(debug_non_tensor + "\n")
-                        # Print key fields
-                        for key in ["task", "subtask", "src_smiles", "add_group", "remove_group", "ref_smiles", "extra_info"]:
-                            if key in data_item.non_tensor_batch:
-                                raw_value = data_item.non_tensor_batch[key]
-                                # Try to extract scalar value
-                                try:
-                                    import numpy as np
-                                    if isinstance(raw_value, np.ndarray):
-                                        if raw_value.shape == ():
-                                            scalar_value = raw_value.item()
-                                        elif len(raw_value) > 0:
-                                            scalar_value = raw_value[0]
-                                        else:
-                                            scalar_value = None
-                                    elif isinstance(raw_value, (list, tuple)) and raw_value:
+                    debug_content = debug_non_tensor + "\n"
+                    # Print key fields
+                    for key in ["task", "subtask", "src_smiles", "add_group", "remove_group", "ref_smiles", "extra_info"]:
+                        if key in data_item.non_tensor_batch:
+                            raw_value = data_item.non_tensor_batch[key]
+                            # Try to extract scalar value
+                            try:
+                                import numpy as np
+                                if isinstance(raw_value, np.ndarray):
+                                    if raw_value.shape == ():
+                                        scalar_value = raw_value.item()
+                                    elif len(raw_value) > 0:
                                         scalar_value = raw_value[0]
                                     else:
-                                        scalar_value = raw_value
-                                    f.write(f"  non_tensor_batch['{key}']: {type(raw_value).__name__}={scalar_value}\n")
-                                except Exception:
-                                    f.write(f"  non_tensor_batch['{key}']: {type(raw_value).__name__}=<error extracting>\n")
-                            else:
-                                f.write(f"  non_tensor_batch['{key}']: NOT FOUND\n")
-                        f.flush()
+                                        scalar_value = None
+                                elif isinstance(raw_value, (list, tuple)) and raw_value:
+                                    scalar_value = raw_value[0]
+                                else:
+                                    scalar_value = raw_value
+                                debug_content += f"  non_tensor_batch['{key}']: {type(raw_value).__name__}={scalar_value}\n"
+                            except Exception:
+                                debug_content += f"  non_tensor_batch['{key}']: {type(raw_value).__name__}=<error extracting>\n"
+                        else:
+                            debug_content += f"  non_tensor_batch['{key}']: NOT FOUND\n"
+                    _write_debug_file(debug_content)
                 except Exception as e:
                     logger.error(f"Failed to write debug file: {e}")
             
             # If rm_scores exists but no responses, check if we need to recompute
             if "rm_scores" in data.batch.keys():
-                # Check if rm_correct exists and if it's all zeros (indicating incorrect calculation)
+                # For mol_opt tasks, check if reward is all -1 (indicating incorrect calculation)
+                # For mol_edit tasks, check if rm_correct is all zeros
                 need_recompute = False
-                if "rm_correct" in data.non_tensor_batch:
+                
+                # Check task type to determine which field to check
+                task_type = None
+                if len(data) > 0:
+                    task_type = data[0].non_tensor_batch.get("task", None)
+                    if isinstance(task_type, (list, tuple)) and task_type:
+                        task_type = task_type[0]
+                    elif hasattr(task_type, 'item'):
+                        task_type = task_type.item()
+                
+                if task_type and str(task_type).lower() == "mol_opt":
+                    # For mol_opt, check if rm_scores are all -1
+                    # rm_scores is a 2D array (batch_size x sequence_length)
+                    # We need to check if the mean reward per sample is -1 (or close to it)
+                    try:
+                        import numpy as np
+                        import torch
+                        rm_scores = data.batch["rm_scores"]
+                        if isinstance(rm_scores, torch.Tensor):
+                            rm_scores = rm_scores.cpu().numpy()
+                        if isinstance(rm_scores, np.ndarray):
+                            if rm_scores.size > 0:
+                                # Get reward_mask to identify valid positions
+                                reward_mask = data.batch.get("reward_mask", None)
+                                if reward_mask is not None:
+                                    if isinstance(reward_mask, torch.Tensor):
+                                        reward_mask = reward_mask.cpu().numpy()
+                                    # Only check positions where reward_mask is 1
+                                    masked_scores = rm_scores[reward_mask == 1]
+                                    if len(masked_scores) > 0:
+                                        # Check if all masked scores are -1 (or very close to -1)
+                                        all_neg_one = np.all(np.abs(masked_scores - (-1.0)) < 0.01)
+                                    else:
+                                        all_neg_one = False
+                                else:
+                                    # Fallback: check if all scores are -1
+                                    all_neg_one = np.all(np.abs(rm_scores - (-1.0)) < 0.01)
+                                
+                                if all_neg_one:
+                                    debug_recompute = f"[RewardManager Debug] rm_scores are all -1 for mol_opt, need to recompute (checked {len(masked_scores) if reward_mask is not None else rm_scores.size} scores)\n"
+                                    print(debug_recompute, flush=True)
+                                    logger.warning(debug_recompute)
+                                    sys.stdout.flush()
+                                    sys.stderr.flush()
+                                    try:
+                                        _write_debug_file(debug_recompute + "\n")
+                                    except Exception:
+                                        pass
+                                    need_recompute = True
+                    except Exception as e:
+                        logger.warning(f"Failed to check rm_scores for mol_opt: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # Check if rm_correct exists and if it's all zeros (indicating incorrect calculation)
+                if not need_recompute and "rm_correct" in data.non_tensor_batch:
                     try:
                         import numpy as np
                         rm_correct = data.non_tensor_batch["rm_correct"]
@@ -268,9 +333,7 @@ class NaiveRewardManager:
                                     sys.stdout.flush()
                                     sys.stderr.flush()
                                     try:
-                                        with open(DEBUG_FILE, "a") as f:
-                                            f.write(debug_recompute + "\n")
-                                            f.flush()
+                                        _write_debug_file(debug_recompute + "\n")
                                     except Exception:
                                         pass
                                     need_recompute = True
@@ -287,9 +350,7 @@ class NaiveRewardManager:
                     sys.stdout.flush()
                     sys.stderr.flush()
                     try:
-                        with open(DEBUG_FILE, "a") as f:
-                            f.write(debug_recompute + "\n")
-                            f.flush()
+                        _write_debug_file(debug_recompute + "\n")
                     except Exception:
                         pass
                     
@@ -331,9 +392,10 @@ class NaiveRewardManager:
                         kwargs = {}
                         
                         # Field mappings: target_key -> list of possible source keys
-                        # Note: subtask is removed as it's always identical to task
+                        # For mol_opt, we need subtask (e.g., logp, solubility, drd, etc.)
                         field_mappings = {
                             "task": ["task"],
+                            "subtask": ["subtask"],  # Important for mol_opt
                             "src_smiles": ["src_smiles"],
                             "add_group": ["add_group"],
                             "remove_group": ["remove_group"],
@@ -350,9 +412,14 @@ class NaiveRewardManager:
                                         kwargs[target_key] = scalar_value
                                         break
                         
-                        # Add subtask as alias to task (for backward compatibility)
-                        if "task" in kwargs:
-                            kwargs["subtask"] = kwargs["task"]
+                        # For mol_edit, subtask is the same as task (add/delete/sub)
+                        # For mol_opt, subtask is different (logp/solubility/drd/etc.)
+                        # Only set subtask from task if subtask is not already set
+                        if "task" in kwargs and "subtask" not in kwargs:
+                            # For mol_edit tasks, subtask equals task
+                            task_val = kwargs.get("task", "").lower()
+                            if task_val in ["add", "delete", "sub"]:
+                                kwargs["subtask"] = kwargs["task"]
                         
                         # If ref_smiles is missing, try to get it from extra_info or reward_model (backward compatibility)
                         if "ref_smiles" not in kwargs or kwargs.get("ref_smiles") is None:
@@ -378,9 +445,7 @@ class NaiveRewardManager:
                             sys.stdout.flush()
                             sys.stderr.flush()
                             try:
-                                with open(DEBUG_FILE, "a") as f:
-                                    f.write(debug_kwargs + "\n")
-                                    f.flush()
+                                _write_debug_file(debug_kwargs + "\n")
                             except Exception:
                                 pass
                         
@@ -439,9 +504,7 @@ class NaiveRewardManager:
                             if response_ids is None:
                                 # Log to file only (this is an expected case, not an error)
                                 try:
-                                    with open(DEBUG_FILE, "a") as f:
-                                        f.write(f"[RewardManager Debug] Sample {i} - Cannot extract response from input_ids/labels, skipping\n")
-                                        f.flush()
+                                    _write_debug_file(f"[RewardManager Debug] Sample {i} - Cannot extract response from input_ids/labels, skipping\n")
                                 except Exception:
                                     pass
                                 continue  # Skip this sample if we can't get response
@@ -489,9 +552,7 @@ class NaiveRewardManager:
                             sys.stdout.flush()
                             sys.stderr.flush()
                             try:
-                                with open(DEBUG_FILE, "a") as f:
-                                    f.write(debug_call + "\n")
-                                    f.flush()
+                                _write_debug_file(debug_call + "\n")
                             except Exception:
                                 pass
                         
@@ -524,12 +585,25 @@ class NaiveRewardManager:
                         ]
                         
                         try:
-                            # Try to import and use mol_edit_simple directly
+                            # Determine which reward function to use based on task type
+                            task_val = kwargs_for_call.get("task", "").lower() if isinstance(kwargs_for_call.get("task"), str) else ""
+                            
+                            # Try to import and use the appropriate reward function directly
                             try:
-                                from agentfly.rewards.mol_edit_reward import mol_edit_simple
                                 import asyncio
                                 
-                                # mol_edit_simple is async, so we need to run it
+                                # Select reward function based on task
+                                if task_val == "mol_opt":
+                                    from agentfly.rewards.mol_opt_reward import mol_opt_reward
+                                    reward_func = mol_opt_reward
+                                    reward_func_name = "mol_opt_reward"
+                                else:
+                                    # Default to mol_edit_simple for mol_edit tasks
+                                    from agentfly.rewards.mol_edit_reward import mol_edit_simple
+                                    reward_func = mol_edit_simple
+                                    reward_func_name = "mol_edit_simple"
+                                
+                                # Reward functions are async, so we need to run them
                                 try:
                                     # Try to get the event loop
                                     loop = asyncio.get_event_loop()
@@ -544,7 +618,7 @@ class NaiveRewardManager:
                                 
                                 # Create a coroutine and run it
                                 # Pass all kwargs_copy items as **kwargs to ensure they're captured
-                                coro = mol_edit_simple(
+                                coro = reward_func(
                                     prediction=response_str,
                                     trajectory=trajectory,
                                     ref_smiles=ref_smiles_value,
@@ -553,17 +627,15 @@ class NaiveRewardManager:
                                 
                                 score = loop.run_until_complete(coro)
                                 
-                                # Debug: Print score after calling mol_edit_simple (only for first few samples)
+                                # Debug: Print score after calling reward function (only for first few samples)
                                 if i < 3:
-                                    debug_score = f"[RewardManager Debug] Sample {i} - mol_edit_simple returned score: {score}\n"
+                                    debug_score = f"[RewardManager Debug] Sample {i} - {reward_func_name} returned score: {score}\n"
                                     print(debug_score, flush=True)
                                     logger.warning(debug_score)
                                     sys.stdout.flush()
                                     sys.stderr.flush()
                                     try:
-                                        with open(DEBUG_FILE, "a") as f:
-                                            f.write(debug_score + "\n")
-                                            f.flush()
+                                        _write_debug_file(debug_score + "\n")
                                     except Exception:
                                         pass
                             except (ImportError, AttributeError, RuntimeError) as import_err:
@@ -601,9 +673,7 @@ class NaiveRewardManager:
                                     sys.stdout.flush()
                                     sys.stderr.flush()
                                     try:
-                                        with open(DEBUG_FILE, "a") as f:
-                                            f.write(debug_skip + "\n")
-                                            f.flush()
+                                        _write_debug_file(debug_skip + "\n")
                                     except Exception:
                                         pass
                                     continue  # Skip this sample
@@ -617,47 +687,75 @@ class NaiveRewardManager:
                             sys.stdout.flush()
                             sys.stderr.flush()
                             try:
-                                with open(DEBUG_FILE, "a") as f:
-                                    f.write(debug_error + "\n")
-                                    f.flush()
+                                _write_debug_file(debug_error + "\n")
                             except Exception:
                                 pass
                             continue  # Skip this sample
                         
-                        # Update rm_correct if score contains correct
-                        if isinstance(score, dict) and "correct" in score:
-                            # Update rm_correct in non_tensor_batch
-                            if "rm_correct" in data.non_tensor_batch:
+                        # Update reward scores based on task type
+                        if isinstance(score, dict):
+                            # For mol_edit, update rm_correct
+                            if "correct" in score:
+                                if "rm_correct" in data.non_tensor_batch:
+                                    import numpy as np
+                                    rm_correct = data.non_tensor_batch["rm_correct"]
+                                    if isinstance(rm_correct, np.ndarray):
+                                        rm_correct[i] = score["correct"]
+                                    elif isinstance(rm_correct, list):
+                                        rm_correct[i] = score["correct"]
+                                    
+                                    debug_update = f"[RewardManager Debug] Updated rm_correct[{i}] = {score['correct']}\n"
+                                    print(debug_update, flush=True)
+                                    logger.warning(debug_update)
+                                    sys.stdout.flush()
+                                    sys.stderr.flush()
+                                    try:
+                                        _write_debug_file(debug_update + "\n")
+                                    except Exception:
+                                        pass
+                            
+                            # For mol_opt, update rm_scores
+                            if "reward" in score:
                                 import numpy as np
-                                rm_correct = data.non_tensor_batch["rm_correct"]
-                                if isinstance(rm_correct, np.ndarray):
-                                    rm_correct[i] = score["correct"]
-                                elif isinstance(rm_correct, list):
-                                    rm_correct[i] = score["correct"]
-                                
-                                debug_update = f"[RewardManager Debug] Updated rm_correct[{i}] = {score['correct']}\n"
-                                print(debug_update, flush=True)
-                                logger.warning(debug_update)
-                                sys.stdout.flush()
-                                sys.stderr.flush()
-                                try:
-                                    with open(DEBUG_FILE, "a") as f:
-                                        f.write(debug_update + "\n")
-                                        f.flush()
-                                except Exception:
-                                    pass
+                                import torch
+                                if "rm_scores" in data.batch:
+                                    rm_scores = data.batch["rm_scores"]
+                                    reward_mask = data.batch.get("reward_mask", None)
+                                    if reward_mask is not None:
+                                        # Get the reward value from score
+                                        reward_val = score.get("reward", -1.0)
+                                        # Update rm_scores where reward_mask is 1
+                                        if isinstance(rm_scores, torch.Tensor):
+                                            # Find positions where reward_mask is 1 for this sample
+                                            sample_mask = reward_mask[i]
+                                            if sample_mask.sum() > 0:
+                                                # Update the first position where mask is 1
+                                                mask_positions = torch.where(sample_mask == 1)[0]
+                                                if len(mask_positions) > 0:
+                                                    rm_scores[i, mask_positions[0]] = reward_val
+                                        elif isinstance(rm_scores, np.ndarray):
+                                            sample_mask = reward_mask[i] if isinstance(reward_mask, np.ndarray) else reward_mask[i].cpu().numpy()
+                                            mask_positions = np.where(sample_mask == 1)[0]
+                                            if len(mask_positions) > 0:
+                                                rm_scores[i, mask_positions[0]] = reward_val
+                                        
+                                        # Debug: Print update (only for first few samples)
+                                        if i < 3:
+                                            debug_update = f"[RewardManager Debug] Sample {i} - Updated rm_scores[{i}] to {reward_val}\n"
+                                            print(debug_update, flush=True)
+                                            logger.warning(debug_update)
+                                            try:
+                                                _write_debug_file(debug_update + "\n")
+                                            except Exception:
+                                                pass
                         else:
-                            # Debug: score doesn't have correct field
+                            # Debug: score is not a dict
                             if i < 3:
-                                debug_no_correct = f"[RewardManager Debug] Sample {i} - score doesn't have 'correct' field. score type: {type(score)}, score keys: {list(score.keys()) if isinstance(score, dict) else 'N/A'}\n"
-                                print(debug_no_correct, flush=True)
-                                logger.warning(debug_no_correct)
-                                sys.stdout.flush()
-                                sys.stderr.flush()
+                                debug_no_dict = f"[RewardManager Debug] Sample {i} - score is not a dict. score type: {type(score)}\n"
+                                print(debug_no_dict, flush=True)
+                                logger.warning(debug_no_dict)
                                 try:
-                                    with open(DEBUG_FILE, "a") as f:
-                                        f.write(debug_no_correct + "\n")
-                                        f.flush()
+                                    _write_debug_file(debug_no_dict + "\n")
                                 except Exception:
                                     pass
                 
@@ -682,9 +780,7 @@ class NaiveRewardManager:
         sys.stdout.flush()
         sys.stderr.flush()
         try:
-            with open(DEBUG_FILE, "a") as f:
-                f.write(debug_loop_start + "\n")
-                f.flush()
+            _write_debug_file(debug_loop_start + "\n")
         except Exception as e:
             logger.error(f"Failed to write debug file: {e}")
 
@@ -701,9 +797,7 @@ class NaiveRewardManager:
                 sys.stdout.flush()
                 sys.stderr.flush()
                 try:
-                    with open(DEBUG_FILE, "a") as f:
-                        f.write(debug_all_keys + "\n")
-                        f.flush()
+                    _write_debug_file(debug_all_keys + "\n")
                 except Exception as e:
                     logger.error(f"Failed to write debug file: {e}")
 
@@ -821,9 +915,7 @@ class NaiveRewardManager:
                 sys.stdout.flush()
                 sys.stderr.flush()
                 try:
-                    with open(DEBUG_FILE, "a") as f:
-                        f.write(debug_kwargs + "\n")
-                        f.flush()
+                    _write_debug_file(debug_kwargs + "\n")
                 except Exception as e:
                     logger.error(f"Failed to write debug file: {e}")
             
@@ -870,9 +962,7 @@ class NaiveRewardManager:
                 
                 # Also write to debug file
                 try:
-                    with open(DEBUG_FILE, "a") as f:
-                        f.write(debug_msg + "\n")
-                        f.flush()
+                    _write_debug_file(debug_msg + "\n")
                 except Exception as e:
                     logger.error(f"Failed to write debug file: {e}")
             
